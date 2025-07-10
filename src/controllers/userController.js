@@ -108,6 +108,7 @@ const updateUserPermissions = async (req, res) => {
 
 // --- AUTHENTICATION & PROFILE ---
 
+// THIS IS THE CORRECTED AND COMPLETE FUNCTION
 const loginUser = async (req, res) => {
     const { email, password } = req.body;
     if (!email || !password) { return res.status(400).json({ message: 'Please provide both email and password.' });}
@@ -119,18 +120,23 @@ const loginUser = async (req, res) => {
         const isMatch = await bcrypt.compare(password, user.password_hash);
         if (!isMatch) { return res.status(401).json({ message: 'Invalid credentials.' });}
         
+        // Fetch user's permissions
         const permissionsResult = await pool.query('SELECT p.name FROM Permissions p JOIN User_Permissions up ON up.permission_id = p.permission_id WHERE up.user_id = $1', [user.user_id]);
         const permissions = permissionsResult.rows.map(row => row.name);
 
+        // Create the payload with all necessary information
         const payload = { 
-            user_id: user.user_id, 
+            user_id: user.user_id, // CRITICAL: This is needed by the 'protect' middleware
             name: user.name, 
             job_title: user.job_title,
             department_id: user.department_id,
-            permissions: permissions
+            permissions: permissions // This is needed by the 'authorize' middleware
         };
+        
+        // Sign the token
         const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '1d' });
         
+        // Send the token back to the client
         res.json({ message: 'Login successful!', token: token });
     } catch (error) {
         console.error('Error during user login:', error);
@@ -158,6 +164,8 @@ const getUserWithPermissions = async (req, res) => {
 };
 
 const getMyProfile = async (req, res) => {
+    // The 'protect' middleware already found the user and attached it to req.user
+    // We just need to send it back.
     res.json(req.user);
 };
 
@@ -309,9 +317,8 @@ const getRelatedTasksForUser = async (req, res) => {
     }
 };
 
-// --- THIS IS THE NEW SECRET FUNCTION TO CREATE THE ADMIN ---
+// --- THIS IS THE TEMPORARY SECRET FUNCTION TO CREATE THE ADMIN ---
 const setupInitialAdmin = async (req, res) => {
-    // This secret key prevents random people from running this.
     const SECRET_KEY = "super-secret-key-to-create-admin-123";
     if (req.query.secret !== SECRET_KEY) {
         return res.status(403).send("Forbidden: Invalid secret key.");
@@ -321,37 +328,26 @@ const setupInitialAdmin = async (req, res) => {
     const adminPassword = 'adminpassword';
 
     try {
-        // Check if admin already exists
         const existingAdmin = await pool.query('SELECT * FROM Users WHERE email = $1', [adminEmail]);
         if (existingAdmin.rows.length > 0) {
             return res.send(`Admin user with email '${adminEmail}' already exists.`);
         }
-
-        // Hash the password
         const salt = await bcrypt.genSalt(10);
         const password_hash = await bcrypt.hash(adminPassword, salt);
-
-        // Insert the admin user
         const adminResult = await pool.query(
             `INSERT INTO Users (name, email, password_hash, job_title) VALUES ('System Admin', $1, $2, 'Administrator') RETURNING user_id`,
             [adminEmail, password_hash]
         );
         const adminId = adminResult.rows[0].user_id;
-
-        // Get all permission IDs
         const permissionsResult = await pool.query('SELECT permission_id FROM Permissions');
         const permissionIds = permissionsResult.rows.map(p => p.permission_id);
-
-        // Assign all permissions
         for (const permId of permissionIds) {
             await pool.query(
                 'INSERT INTO User_Permissions (user_id, permission_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
                 [adminId, permId]
             );
         }
-
         res.send(`SUCCESS: Admin user created with ID ${adminId} and assigned all ${permissionIds.length} permissions.`);
-
     } catch (error) {
         console.error('Error during admin setup:', error);
         res.status(500).send("Server error during admin setup.");
@@ -376,5 +372,5 @@ module.exports = {
     updateUser,
     deleteUser,
     getRelatedTasksForUser,
-    setupInitialAdmin // <-- ADD THE NEW FUNCTION HERE
+    setupInitialAdmin
 };
