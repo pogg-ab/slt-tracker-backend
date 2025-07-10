@@ -1,60 +1,68 @@
-const express = require('express');
-const path = require('path');
-const cors = require('cors');
-const pool = require('./src/config/db');
+// create-admin.js
+require('dotenv').config();
+const bcrypt = require('bcrypt');
+const pool = require('./src/config/db'); // Correct path to your db config
 
-// Import all your route files
-const userRoutes = require('./src/routes/userRoutes');
-const taskRoutes = require('./src/routes/taskRoutes');
-const reportsRoutes = require('./src/routes/reportsRoutes');
-const timesheetRoutes = require('./src/routes/timesheetRoutes');
-const departmentRoutes = require('./src/routes/departmentRoutes');
+const createAdmin = async () => {
+    // --- CONFIGURATION ---
+    const adminEmail = 'admin@skylink.com';
+    const adminPassword = 'adminpassword'; // Use a strong password in a real project
+    // --- END CONFIGURATION ---
 
-const app = express();
+    console.log('--- Starting Admin User Creation Script ---');
+    
+    const client = await pool.connect(); // Use a client for multiple queries
 
-// --- THE NEW, MORE POWERFUL CORS FIX ---
+    try {
+        // Check if admin already exists
+        const existingAdmin = await client.query('SELECT * FROM Users WHERE email = $1', [adminEmail]);
+        if (existingAdmin.rows.length > 0) {
+            console.log(`Admin user with email '${adminEmail}' already exists. Script finished.`);
+            return; // Exit if admin exists
+        }
 
-// 1. Manually handle the OPTIONS preflight request for all routes
-app.options('*', cors()); // This enables pre-flight requests across the board
+        // Hash the password
+        const salt = await bcrypt.genSalt(10);
+        const password_hash = await bcrypt.hash(adminPassword, salt);
 
-// 2. Use a more open CORS policy for debugging
-// The '*' allows requests from ANY origin. We do this to see if the server
-// is blocking a specific origin or ALL cross-origin requests.
-app.use(cors({
-    origin: '*', 
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization']
-}));
+        // Insert the admin user with a 'job_title'
+        const adminResult = await client.query(
+            `INSERT INTO Users (name, email, password_hash, job_title) 
+             VALUES ('System Admin', $1, $2, 'Administrator') RETURNING user_id`,
+            [adminEmail, password_hash]
+        );
 
-// --- END OF FIX ---
+        const adminId = adminResult.rows[0].user_id;
+        console.log(`✅ Admin user created with ID: ${adminId}`);
 
-// Other Middlewares
-app.use(express.json());
-app.use(express.urlencoded({ extended: false }));
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+        // Get all permission IDs from the Permissions table
+        const permissionsResult = await client.query('SELECT permission_id FROM Permissions');
+        const permissionIds = permissionsResult.rows.map(p => p.permission_id);
 
-// API Routes
-app.use('/api/users', userRoutes);
-app.use('/api/tasks', taskRoutes);
-app.g
-app.use('/api/reports', reportsRoutes);
-app.use('/api/timesheets', timesheetRoutes);
-app.use('/api/departments', departmentRoutes);
+        if (permissionIds.length === 0) {
+            console.error('❌ No permissions found in the Permissions table. Did you run init.sql?');
+            return;
+        }
 
-// Root route for checking server status
-app.get('/', (req, res) => {
-  res.send('SLT-Tracker Backend is running!');
-});
+        // Use a loop to assign all permissions to the admin user
+        for (const permId of permissionIds) {
+            await client.query(
+                'INSERT INTO User_Permissions (user_id, permission_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+                [adminId, permId]
+            );
+        }
 
-// Database connection check
-const checkDbConnection = async () => {
-  try {
-    await pool.query('SELECT NOW()');
-    console.log('✅ Database connection successful!');
-  } catch (error) {
-    console.error('❌ Database connection failed:', error);
-  }
+        console.log(`✅ Assigned all ${permissionIds.length} permissions to the admin user.`);
+        console.log('--- Admin User Creation Script Finished Successfully ---');
+
+    } catch (error) {
+        console.error('❌ Error creating admin user:', error);
+    } finally {
+        await client.release(); // Release the client back to the pool
+        await pool.end();     // Close all connections in the pool
+        console.log('Database connection closed.');
+    }
 };
-checkDbConnection();
 
-// Note: We don't need app.listen() for cPanel deployment
+// Run the function
+createAdmin();

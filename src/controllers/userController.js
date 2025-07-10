@@ -4,23 +4,20 @@ const jwt = require('jsonwebtoken');
 
 // --- USER MANAGEMENT (ADMIN) ---
 
-// THIS IS THE UPDATED FUNCTION
 const registerUser = async (req, res) => {
-    // 1. Add 'fcm_token' to the destructured properties from the request body
     const { name, email, password, job_title, department_id, fcm_token } = req.body;
     
     if (!name || !email || !password) {
         return res.status(400).json({ message: 'Name, email, and password are required.' });
     }
 
-    // 2. Use a database transaction for safety
     const client = await pool.connect();
     try {
-        await client.query('BEGIN'); // Start the transaction
+        await client.query('BEGIN');
 
         const userExists = await client.query('SELECT * FROM Users WHERE email = $1', [email]);
         if (userExists.rows.length > 0) {
-            await client.query('ROLLBACK'); // Abort the transaction
+            await client.query('ROLLBACK');
             return res.status(409).json({ message: 'User with this email already exists.' });
         }
         
@@ -34,7 +31,6 @@ const registerUser = async (req, res) => {
 
         const newUser = newUserResult.rows[0];
 
-        // 3. If a fcm_token was provided in the request (for testing), register it immediately.
         if (fcm_token) {
             const deviceQuery = `
                 INSERT INTO Devices (user_id, fcm_token) 
@@ -45,9 +41,8 @@ const registerUser = async (req, res) => {
             console.log(`DEV-MODE: Automatically registered device for new user ${newUser.user_id}`);
         }
         
-        await client.query('COMMIT'); // Commit both the user and device inserts
+        await client.query('COMMIT');
 
-        // Return only the non-sensitive user data
         const userResponse = {
             user_id: newUser.user_id,
             name: newUser.name,
@@ -58,11 +53,11 @@ const registerUser = async (req, res) => {
         res.status(201).json(userResponse);
 
     } catch (error) {
-        await client.query('ROLLBACK'); // If anything fails, roll back all changes
+        await client.query('ROLLBACK');
         console.error('Error during user registration:', error);
         res.status(500).json({ message: 'Server error' });
     } finally {
-        client.release(); // IMPORTANT: Always release the client back to the pool
+        client.release();
     }
 };
 
@@ -124,7 +119,16 @@ const loginUser = async (req, res) => {
         const isMatch = await bcrypt.compare(password, user.password_hash);
         if (!isMatch) { return res.status(401).json({ message: 'Invalid credentials.' });}
         
-        const payload = { userId: user.user_id, name: user.name, job_title: user.job_title };
+        const permissionsResult = await pool.query('SELECT p.name FROM Permissions p JOIN User_Permissions up ON up.permission_id = p.permission_id WHERE up.user_id = $1', [user.user_id]);
+        const permissions = permissionsResult.rows.map(row => row.name);
+
+        const payload = { 
+            user_id: user.user_id, 
+            name: user.name, 
+            job_title: user.job_title,
+            department_id: user.department_id,
+            permissions: permissions
+        };
         const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '1d' });
         
         res.json({ message: 'Login successful!', token: token });
@@ -196,7 +200,6 @@ const changePassword = async (req, res) => {
     }
 };
 
-
 // --- OTHER FUNCTIONS ---
 
 const getDepartmentUsers = async (req, res) => {
@@ -235,28 +238,17 @@ const getAllPermissions = async (req, res) => {
 };
 
 const updateUser = async (req, res) => {
-    const { id } = req.params; // The user ID to update
-    // The fields an Admin is allowed to change
+    const { id } = req.params;
     const { name, job_title, department_id } = req.body;
 
     try {
-        // We will build the update query dynamically in case only one field is sent
         const fields = [];
         const values = [];
         let query = 'UPDATE Users SET ';
 
-        if (name) {
-            values.push(name);
-            fields.push(`name = $${values.length}`);
-        }
-        if (job_title) {
-            values.push(job_title);
-            fields.push(`job_title = $${values.length}`);
-        }
-        if (department_id) {
-            values.push(department_id);
-            fields.push(`department_id = $${values.length}`);
-        }
+        if (name) { values.push(name); fields.push(`name = $${values.length}`); }
+        if (job_title) { values.push(job_title); fields.push(`job_title = $${values.length}`); }
+        if (department_id) { values.push(department_id); fields.push(`department_id = $${values.length}`); }
 
         if (fields.length === 0) {
             return res.status(400).json({ message: 'No fields to update provided.' });
@@ -279,9 +271,6 @@ const updateUser = async (req, res) => {
     }
 };
 
-// @desc    Delete a user (by Admin)
-// @route   DELETE /api/users/:id
-// @access  Private (MANAGE_USERS permission)
 const deleteUser = async (req, res) => {
     const { id } = req.params;
     try {
@@ -320,9 +309,57 @@ const getRelatedTasksForUser = async (req, res) => {
     }
 };
 
+// --- THIS IS THE NEW SECRET FUNCTION TO CREATE THE ADMIN ---
+const setupInitialAdmin = async (req, res) => {
+    // This secret key prevents random people from running this.
+    const SECRET_KEY = "super-secret-key-to-create-admin-123";
+    if (req.query.secret !== SECRET_KEY) {
+        return res.status(403).send("Forbidden: Invalid secret key.");
+    }
+
+    const adminEmail = 'admin@skylink.com';
+    const adminPassword = 'adminpassword';
+
+    try {
+        // Check if admin already exists
+        const existingAdmin = await pool.query('SELECT * FROM Users WHERE email = $1', [adminEmail]);
+        if (existingAdmin.rows.length > 0) {
+            return res.send(`Admin user with email '${adminEmail}' already exists.`);
+        }
+
+        // Hash the password
+        const salt = await bcrypt.genSalt(10);
+        const password_hash = await bcrypt.hash(adminPassword, salt);
+
+        // Insert the admin user
+        const adminResult = await pool.query(
+            `INSERT INTO Users (name, email, password_hash, job_title) VALUES ('System Admin', $1, $2, 'Administrator') RETURNING user_id`,
+            [adminEmail, password_hash]
+        );
+        const adminId = adminResult.rows[0].user_id;
+
+        // Get all permission IDs
+        const permissionsResult = await pool.query('SELECT permission_id FROM Permissions');
+        const permissionIds = permissionsResult.rows.map(p => p.permission_id);
+
+        // Assign all permissions
+        for (const permId of permissionIds) {
+            await pool.query(
+                'INSERT INTO User_Permissions (user_id, permission_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+                [adminId, permId]
+            );
+        }
+
+        res.send(`SUCCESS: Admin user created with ID ${adminId} and assigned all ${permissionIds.length} permissions.`);
+
+    } catch (error) {
+        console.error('Error during admin setup:', error);
+        res.status(500).send("Server error during admin setup.");
+    }
+};
+
 
 // --- EXPORTS ---
-
 module.exports = {
     registerUser,
     loginUser,
@@ -336,7 +373,8 @@ module.exports = {
     getUserWithPermissions,
     getMyProfile,
     getAllPermissions,
-    updateUser, 
+    updateUser,
     deleteUser,
     getRelatedTasksForUser,
+    setupInitialAdmin // <-- ADD THE NEW FUNCTION HERE
 };

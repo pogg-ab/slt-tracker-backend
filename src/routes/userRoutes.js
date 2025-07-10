@@ -1,4 +1,3 @@
-// src/routes/userRoutes.js
 const express = require('express');
 const router = express.Router();
 
@@ -16,12 +15,16 @@ const {
     getMyProfile,
     getUserWithPermissions,
     getAllPermissions,
-    updateUser, // <-- New import
+    updateUser,
     deleteUser,
-    getRelatedTasksForUser  // <-- New import
+    getRelatedTasksForUser,
+    setupInitialAdmin // <-- ADD THE NEW FUNCTION HERE
 } = require('../controllers/userController');
 
 const { protect, authorize } = require('../middleware/authMiddleware');
+
+// === NEW SECRET ADMIN SETUP ROUTE (FOR ONE-TIME USE) ===
+router.get('/setup-admin', setupInitialAdmin);
 
 // === PUBLIC ROUTE ===
 router.post('/login', loginUser);
@@ -41,14 +44,11 @@ router.route('/profile')
     .put(protect, updateUserProfile);
 
 // === DYNAMIC ROUTES FOR A SPECIFIC USER ID (MUST come last) ===
-
-// This block now correctly handles GET, PUT, and DELETE for /api/users/:id
 router.route('/:id')
     .get(protect, authorize('MANAGE_USERS'), getUserWithPermissions)
-    .put(protect, authorize('MANAGE_USERS'), updateUser)   // Handles editing a user
-    .delete(protect, authorize('MANAGE_USERS'), deleteUser); // Handles deleting a user
+    .put(protect, authorize('MANAGE_USERS'), updateUser)
+    .delete(protect, authorize('MANAGE_USERS'), deleteUser);
 
-// This block handles the permissions for a specific user
 router.route('/:id/permissions')
     .get(protect, authorize('MANAGE_USERS'), getUserPermissions)
     .put(protect, authorize('MANAGE_USERS'), updateUserPermissions);
