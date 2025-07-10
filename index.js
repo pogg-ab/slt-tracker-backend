@@ -10,8 +10,6 @@ const reportsRoutes = require('./src/routes/reportsRoutes');
 const timesheetRoutes = require('./src/routes/timesheetRoutes');
 const departmentRoutes = require('./src/routes/departmentRoutes');
 
-// Initialize Firebase
-require('./src/config/firebaseConfig');
 
 const app = express();
 const PORT = process.env.PORT || 3000; // Use Render's port, or 3000 for local dev
