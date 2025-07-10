@@ -1,18 +1,25 @@
-// This line loads the environment variables from the .env file
-require('dotenv').config(); 
-
-// We import the Pool class from the 'pg' library
 const { Pool } = require('pg');
 
-// We create a new Pool instance with our database connection details
-// The process.env object contains all the variables from our .env file
+// Load .env variables only in a non-production environment (your local machine)
+if (process.env.NODE_ENV !== 'production') {
+  require('dotenv').config();
+}
+
+// Render provides a single DATABASE_URL environment variable.
+// We will use this in production. For local development, you can still use
+// your .env file, but it must contain a DATABASE_URL variable.
+// Example for your local .env:
+// DATABASE_URL=postgres://slt_admin:mysecretpassword@localhost:5432/slt_tracker
+
+const connectionString = process.env.DATABASE_URL;
+if (!connectionString) {
+  throw new Error('DATABASE_URL is not set in environment variables.');
+}
+
 const pool = new Pool({
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  host: process.env.DB_HOST,
-  port: process.env.DB_PORT,
-  database: process.env.DB_DATABASE,
+  connectionString: connectionString,
+  // In production on Render, SSL is required.
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
 });
 
-// We export the pool object so we can use it in other files to query the database
 module.exports = pool;

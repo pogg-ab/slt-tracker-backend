@@ -1,41 +1,37 @@
 const express = require('express');
-const path = require('path');
-const cors = require('cors'); // We will use this in its simplest form
+const path = require('path'); // Import the path module
 const pool = require('./src/config/db');
+const cors = require('cors');
 
-// Import all your route files
+// Import routes
 const userRoutes = require('./src/routes/userRoutes');
 const taskRoutes = require('./src/routes/taskRoutes');
 const reportsRoutes = require('./src/routes/reportsRoutes');
 const timesheetRoutes = require('./src/routes/timesheetRoutes');
 const departmentRoutes = require('./src/routes/departmentRoutes');
-const setupRoutes = require('./src/routes/setupRoutes'); // Keep this just in case
 
-// Initialize Firebase (if you have this file)
-// require('./src/config/firebaseConfig'); 
+// Initialize Firebase
+require('./src/config/firebaseConfig');
 
 const app = express();
+const PORT = process.env.PORT || 3000; // Use Render's port, or 3000 for local dev
 
-// --- THE SIMPLIFIED CORS FIX ---
-// Let the .htaccess file handle the specific origin.
-// Using app.use(cors()) here will handle the OPTIONS preflight request.
+// --- Middlewares ---
 app.use(cors()); 
-// --- END OF FIX ---
+app.use(express.json()); // To parse JSON bodies
+app.use(express.urlencoded({ extended: false })); // To parse URL-encoded bodies
 
-
-// --- Other Middlewares ---
-app.use(express.json());
-app.use(express.urlencoded({ extended: false }));
+// Make the 'uploads' folder publicly accessible
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 
 // --- API Routes ---
 app.use('/api/users', userRoutes);
+// In index.js
 app.use('/api/tasks', taskRoutes);
 app.use('/api/reports', reportsRoutes);
 app.use('/api/timesheets', timesheetRoutes);
-app.use('/api/departments', departmentRoutes);
-app.use('/api/setup', setupRoutes);
+app.use('/api/departments', departmentRoutes); 
 
 
 // --- Server Setup ---
@@ -49,9 +45,10 @@ const checkDbConnection = async () => {
 };
 
 app.get('/', (req, res) => {
-  res.send('SLT-Tracker Backend is running!');
+  res.send('Hello from SLT-Tracker Backend!');
 });
 
-checkDbConnection();
-
-// app.listen() is not needed for cPanel's Node.js environment
+app.listen(PORT, () => {
+  console.log(`🚀 Server is running on http://localhost:${PORT}`);
+  checkDbConnection();
+});
