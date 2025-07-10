@@ -318,6 +318,7 @@ const getRelatedTasksForUser = async (req, res) => {
 };
 
 // --- THIS IS THE TEMPORARY SECRET FUNCTION TO CREATE THE ADMIN ---
+// --- THIS IS THE NEW "NUKE AND RECREATE" VERSION ---
 const setupInitialAdmin = async (req, res) => {
     const SECRET_KEY = "super-secret-key-to-create-admin-123";
     if (req.query.secret !== SECRET_KEY) {
@@ -328,26 +329,33 @@ const setupInitialAdmin = async (req, res) => {
     const adminPassword = 'adminpassword';
 
     try {
-        const existingAdmin = await pool.query('SELECT * FROM Users WHERE email = $1', [adminEmail]);
-        if (existingAdmin.rows.length > 0) {
-            return res.send(`Admin user with email '${adminEmail}' already exists.`);
-        }
+        // STEP 1: Force-delete the old admin user, if they exist.
+        await pool.query('DELETE FROM Users WHERE email = $1', [adminEmail]);
+        console.log(`Attempted to delete existing user '${adminEmail}'.`);
+
+        // STEP 2: Create a fresh user with a new, correct hash.
         const salt = await bcrypt.genSalt(10);
         const password_hash = await bcrypt.hash(adminPassword, salt);
+
         const adminResult = await pool.query(
             `INSERT INTO Users (name, email, password_hash, job_title) VALUES ('System Admin', $1, $2, 'Administrator') RETURNING user_id`,
             [adminEmail, password_hash]
         );
         const adminId = adminResult.rows[0].user_id;
+
+        // STEP 3: Assign all permissions.
         const permissionsResult = await pool.query('SELECT permission_id FROM Permissions');
         const permissionIds = permissionsResult.rows.map(p => p.permission_id);
+
         for (const permId of permissionIds) {
             await pool.query(
                 'INSERT INTO User_Permissions (user_id, permission_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
                 [adminId, permId]
             );
         }
-        res.send(`SUCCESS: Admin user created with ID ${adminId} and assigned all ${permissionIds.length} permissions.`);
+
+        res.send(`SUCCESS: Admin user was force-recreated with ID ${adminId} and assigned all ${permissionIds.length} permissions.`);
+
     } catch (error) {
         console.error('Error during admin setup:', error);
         res.status(500).send("Server error during admin setup.");
