@@ -9,6 +9,7 @@ const {
     getDepartmentTimeAllocation, 
     getCompanyOverview, 
     getDepartmentKPIs,
+    getDashboardStats
 } = require('../controllers/reportsController');
 
 const { protect, authorize } = require('../middleware/authMiddleware');
@@ -23,6 +24,7 @@ router.get('/department-time/:deptId', protect, authorize('VIEW_REPORTS'), getDe
 router.get('/department-kpi/:deptId', protect, authorize('VIEW_REPORTS'), getDepartmentKPIs);
 router.get('/department/:deptId', protect, authorize('VIEW_REPORTS'), getDepartmentWorkload);
 router.get('/individual/:userId', protect, authorize('VIEW_REPORTS'), getIndividualPerformance);
+router.get('/dashboard-stats', protect, getDashboardStats);
 
 // Any authenticated user should be able to view their own timesheet
 router.get('/timesheet/:userId', protect, getIndividualTimesheet);

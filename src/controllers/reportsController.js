@@ -145,6 +145,42 @@ const getDepartmentKPIs = async (req, res) => {
     }
 };
 
+const getDashboardStats = async (req, res) => {
+    const { user_id, permissions, department_id } = req.user;
+
+    // Use a single, powerful query with conditional aggregation
+    let query = `
+        SELECT
+            -- Count total tasks based on user's permission level
+            COUNT(*) AS total_tasks,
+
+            -- Count tasks with specific statuses
+            COUNT(*) FILTER (WHERE status = 'In Progress') AS in_progress_tasks,
+            COUNT(*) FILTER (WHERE status = 'Completed') AS completed_tasks,
+
+            -- Count total team members if user is a manager
+            (SELECT COUNT(*) FROM Users WHERE department_id = $1) as team_members_count
+        FROM Tasks
+    `;
+
+    const queryParams = [department_id];
+    
+    // If user is not a manager/CEO, only count tasks assigned to them
+    if (!permissions.includes('VIEW_ANY_TASK')) {
+        query += ' WHERE assignee_id = $2';
+        queryParams.push(user_id);
+    } else {
+         query += ' WHERE department_id = $1';
+    }
+
+    try {
+        const statsResult = await pool.query(query, queryParams);
+        res.json(statsResult.rows[0]);
+    } catch (error) {
+        console.error('Error fetching dashboard stats:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
 // Export all functions including the new one
 module.exports = {
     getIndividualPerformance,
@@ -153,4 +189,5 @@ module.exports = {
     getDepartmentTimeAllocation,
     getCompanyOverview,
     getDepartmentKPIs,
+    getDashboardStats,
 };  

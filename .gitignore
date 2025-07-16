@@ -10,3 +10,5 @@ yarn-debug.log*
 yarn-error.log*
 # Firebase service account key (contains master password for Firebase)
 src/config/serviceAccountKey.json
+# Ignore Firebase service account key
+firebase-service-account-key.json

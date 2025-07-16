@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 
-// Import all necessary controller functions
+// Import all necessary controller functions, including the new ones
 const { 
     registerUser, 
     loginUser, 
@@ -18,16 +18,21 @@ const {
     updateUser,
     deleteUser,
     getRelatedTasksForUser,
-    setupInitialAdmin // <-- ADD THE NEW FUNCTION HERE
+    setupInitialAdmin,
+    requestPasswordReset, // <-- ADD THIS
+    resetPassword         // <-- ADD THIS
 } = require('../controllers/userController');
 
 const { protect, authorize } = require('../middleware/authMiddleware');
 
 // === NEW SECRET ADMIN SETUP ROUTE (FOR ONE-TIME USE) ===
+// This route should be removed or heavily secured in production
 router.get('/setup-admin', setupInitialAdmin);
 
-// === PUBLIC ROUTE ===
+// === PUBLIC ROUTES ===
 router.post('/login', loginUser);
+router.post('/request-password-reset', requestPasswordReset); // <-- NEW ROUTE
+router.post('/reset-password', resetPassword);               // <-- NEW ROUTE
 
 // === ADMIN-ONLY ROUTES ===
 router.get('/', protect, authorize('MANAGE_USERS'), getAllUsers);

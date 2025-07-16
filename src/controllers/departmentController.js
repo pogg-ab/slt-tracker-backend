@@ -66,10 +66,58 @@ const getDepartmentUsersWithStats = async (req, res) => {
     }
 };
 
+const updateDepartment = async (req, res) => {
+    const { id } = req.params;
+    const { name } = req.body; // We only expect 'name' now
+
+    if (!name) {
+        return res.status(400).json({ message: 'Department name is required.' });
+    }
+
+    try {
+        // The SQL query is updated to only set the 'name'
+        const updatedDept = await pool.query(
+            'UPDATE Departments SET name = $1 WHERE department_id = $2 RETURNING *',
+            [name, id]
+        );
+
+        if (updatedDept.rows.length === 0) {
+            return res.status(404).json({ message: 'Department not found.' });
+        }
+
+        res.json(updatedDept.rows[0]);
+    } catch (error) {
+        if (error.code === '23505') {
+            return res.status(409).json({ message: 'A department with this name already exists.' });
+        }
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+// @desc    Delete a department
+// @route   DELETE /api/departments/:id
+// @access  Private (MANAGE_DEPARTMENTS permission)
+const deleteDepartment = async (req, res) => {
+    const { id } = req.params;
+    try {
+        // Note: Our database schema (ON DELETE SET NULL for Users) will handle un-assigning users automatically.
+        const deleteResult = await pool.query('DELETE FROM Departments WHERE department_id = $1', [id]);
+
+        if (deleteResult.rowCount === 0) {
+            return res.status(404).json({ message: 'Department not found.' });
+        }
+
+        res.json({ message: 'Department deleted successfully.' });
+    } catch (error) {
+        res.status(500).json({ message: 'Server error' });
+    }
+};
 // --- UPDATE YOUR EXPORTS ---
 module.exports = { 
     getDepartmentUsers, 
     createDepartment,   
     getAllDepartments,
-    getDepartmentUsersWithStats,  
+    getDepartmentUsersWithStats,
+    updateDepartment,
+    deleteDepartment,  
 };
