@@ -1,16 +1,14 @@
--- Clean slate for environments that support it (like your local machine).
--- These lines might cause errors on older cPanel PostgreSQL versions if run a second time.
-DROP TYPE IF EXISTS user_role CASCADE;
-DROP TYPE IF EXISTS task_status CASCADE;
-DROP TYPE IF EXISTS task_priority CASCADE;
-DROP TYPE IF EXISTS approval_status_enum CASCADE;
+-- This script will completely reset and rebuild the database schema.
 
--- === RE-CREATE TYPES ===
+DROP SCHEMA public CASCADE;
+CREATE SCHEMA public;
+
+-- === CREATE ALL ENUM TYPES ===
 CREATE TYPE task_status AS ENUM ('Pending', 'In Progress', 'Completed', 'Overdue');
 CREATE TYPE task_priority AS ENUM ('Low', 'Medium', 'High', 'Urgent');
 CREATE TYPE approval_status_enum AS ENUM ('Pending', 'Approved', 'Rejected');
 
--- === TRIGGER FUNCTION for automatically setting updated_at timestamps ===
+-- === CREATE TRIGGER FUNCTION ===
 CREATE OR REPLACE FUNCTION trigger_set_timestamp()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -22,26 +20,26 @@ $$ LANGUAGE plpgsql;
 
 -- === CREATE TABLES (in correct order) ===
 
-CREATE TABLE IF NOT EXISTS Departments (
+CREATE TABLE IF NOT EXISTS "Departments" (
     department_id SERIAL PRIMARY KEY,
     name VARCHAR(100) NOT NULL UNIQUE,
     description TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS Users (
+CREATE TABLE IF NOT EXISTS "Users" (
     user_id SERIAL PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
     email VARCHAR(100) UNIQUE NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
     job_title VARCHAR(100),
-    department_id INT REFERENCES Departments(department_id) ON DELETE SET NULL,
+    department_id INT REFERENCES "Departments"(department_id) ON DELETE SET NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     password_reset_token TEXT,
     password_reset_expires TIMESTAMP WITH TIME ZONE
 );
 
-CREATE TABLE IF NOT EXISTS Tasks (
+CREATE TABLE IF NOT EXISTS "Tasks" (
     task_id SERIAL PRIMARY KEY,
     title VARCHAR(255) NOT NULL,
     description TEXT,
@@ -50,71 +48,72 @@ CREATE TABLE IF NOT EXISTS Tasks (
     due_date TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    parent_task_id INT REFERENCES Tasks(task_id) ON DELETE CASCADE,
-    assigner_id INT REFERENCES Users(user_id) ON DELETE SET NULL,
-    assignee_id INT REFERENCES Users(user_id) ON DELETE SET NULL,
-    department_id INT REFERENCES Departments(department_id) ON DELETE CASCADE
+    parent_task_id INT REFERENCES "Tasks"(task_id) ON DELETE CASCADE,
+    assigner_id INT REFERENCES "Users"(user_id) ON DELETE SET NULL,
+    assignee_id INT REFERENCES "Users"(user_id) ON DELETE SET NULL,
+    department_id INT REFERENCES "Departments"(department_id) ON DELETE CASCADE
 );
 
-CREATE TABLE IF NOT EXISTS Comments (
+CREATE TABLE IF NOT EXISTS "Comments" (
     comment_id SERIAL PRIMARY KEY,
     message TEXT NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    task_id INT NOT NULL REFERENCES Tasks(task_id) ON DELETE CASCADE,
-    user_id INT REFERENCES Users(user_id) ON DELETE SET NULL
+    task_id INT NOT NULL REFERENCES "Tasks"(task_id) ON DELETE CASCADE,
+    user_id INT REFERENCES "Users"(user_id) ON DELETE SET NULL
 );
 
-CREATE TABLE IF NOT EXISTS Attachments (
+CREATE TABLE IF NOT EXISTS "Attachments" (
     attachment_id SERIAL PRIMARY KEY,
     file_path VARCHAR(255) NOT NULL,
     file_name VARCHAR(255) NOT NULL,
     uploaded_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    task_id INT NOT NULL REFERENCES Tasks(task_id) ON DELETE CASCADE,
-    user_id INT REFERENCES Users(user_id) ON DELETE SET NULL
+    task_id INT NOT NULL REFERENCES "Tasks"(task_id) ON DELETE CASCADE,
+    user_id INT REFERENCES "Users"(user_id) ON DELETE SET NULL
 );
 
-CREATE TABLE IF NOT EXISTS Time_Entries (
+CREATE TABLE IF NOT EXISTS "Time_Entries" (
     entry_id SERIAL PRIMARY KEY,
     duration_minutes INT NOT NULL,
     notes TEXT,
     entry_date DATE NOT NULL DEFAULT CURRENT_DATE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    task_id INT NOT NULL REFERENCES Tasks(task_id) ON DELETE CASCADE,
-    user_id INT REFERENCES Users(user_id) ON DELETE SET NULL,
+    task_id INT NOT NULL REFERENCES "Tasks"(task_id) ON DELETE CASCADE,
+    user_id INT REFERENCES "Users"(user_id) ON DELETE SET NULL,
     approval_status approval_status_enum NOT NULL DEFAULT 'Pending',
-    approved_by INT REFERENCES Users(user_id) ON DELETE SET NULL
+    approved_by INT REFERENCES "Users"(user_id) ON DELETE SET NULL
 );
 
-CREATE TABLE IF NOT EXISTS Devices (
+CREATE TABLE IF NOT EXISTS "Devices" (
     device_id SERIAL PRIMARY KEY,
-    user_id INT NOT NULL REFERENCES Users(user_id) ON DELETE CASCADE,
+    user_id INT NOT NULL REFERENCES "Users"(user_id) ON DELETE CASCADE,
     fcm_token TEXT NOT NULL UNIQUE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS Permissions (
+CREATE TABLE IF NOT EXISTS "Permissions" (
     permission_id SERIAL PRIMARY KEY,
     name VARCHAR(100) UNIQUE NOT NULL,
     description TEXT
 );
 
-CREATE TABLE IF NOT EXISTS User_Permissions (
-    user_id INT NOT NULL REFERENCES Users(user_id) ON DELETE CASCADE,
-    permission_id INT NOT NULL REFERENCES Permissions(permission_id) ON DELETE CASCADE,
+CREATE TABLE IF NOT EXISTS "User_Permissions" (
+    user_id INT NOT NULL REFERENCES "Users"(user_id) ON DELETE CASCADE,
+    permission_id INT NOT NULL REFERENCES "Permissions"(permission_id) ON DELETE CASCADE,
     PRIMARY KEY (user_id, permission_id)
 );
 
-CREATE TABLE IF NOT EXISTS Notifications (
+CREATE TABLE IF NOT EXISTS "Notifications" (
     notification_id SERIAL PRIMARY KEY,
-    user_id INT NOT NULL REFERENCES Users(user_id) ON DELETE CASCADE,
+    user_id INT NOT NULL REFERENCES "Users"(user_id) ON DELETE CASCADE,
     message TEXT NOT NULL,
-    link VARCHAR(255), -- The URL to navigate to when clicked
+    link VARCHAR(255),
     is_read BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
+
 -- === SEED PERMISSIONS DATA ===
-INSERT INTO Permissions (name, description) VALUES
+INSERT INTO "Permissions" (name, description) VALUES
     ('MANAGE_USERS', 'Can create, edit, delete users and manage their permissions.'),
     ('MANAGE_DEPARTMENTS', 'Can create and manage departments.'),
     ('VIEW_REPORTS', 'Can access the reports dashboard.'),
@@ -135,6 +134,6 @@ ON CONFLICT (name) DO NOTHING;
 
 -- === CREATE TRIGGER ===
 CREATE TRIGGER set_tasks_timestamp
-BEFORE UPDATE ON Tasks
+BEFORE UPDATE ON "Tasks"
 FOR EACH ROW
 EXECUTE FUNCTION trigger_set_timestamp();
