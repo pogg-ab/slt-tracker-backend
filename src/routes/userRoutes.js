@@ -19,8 +19,8 @@ const {
     deleteUser,
     getRelatedTasksForUser,
     setupInitialAdmin,
-    requestPasswordReset, // <-- ADD THIS
-    resetPassword         // <-- ADD THIS
+    requestPasswordReset, 
+    resetPassword         
 } = require('../controllers/userController');
 
 const { protect, authorize } = require('../middleware/authMiddleware');

@@ -483,6 +483,6 @@ module.exports = {
     deleteUser,
     getRelatedTasksForUser,
     setupInitialAdmin,
-    requestPasswordReset, // <-- ADD THIS
-    resetPassword         // <-- ADD THIS
+    requestPasswordReset, 
+    resetPassword         
 };
