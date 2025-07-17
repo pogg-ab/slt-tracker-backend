@@ -1,13 +1,7 @@
-// src/routes/userRoutes.js
-
 const express = require('express');
 const router = express.Router();
 
-// We need these two modules for our setup route
-const bcrypt = require('bcrypt');
-const pool = require('../config/db');
-
-// Import all the controller functions we need for other routes
+// Import all necessary controller functions, including the new ones
 const { 
     registerUser, 
     loginUser, 
@@ -24,58 +18,21 @@ const {
     updateUser,
     deleteUser,
     getRelatedTasksForUser,
-    requestPasswordReset, 
-    resetPassword
+    setupInitialAdmin,
+    requestPasswordReset, // <-- ADD THIS
+    resetPassword         // <-- ADD THIS
 } = require('../controllers/userController');
 
 const { protect, authorize } = require('../middleware/authMiddleware');
 
-
-// === NEW, SIMPLE, ONE-TIME ADMIN SETUP ROUTE ===
-// Visit this URL once in your browser to create the first admin user.
-// e.g., https://your-backend-url.onrender.com/api/users/setup-initial-admin
-router.get('/setup-initial-admin', async (req, res) => {
-    const adminEmail = 'admin@skylink.com';
-    const adminPassword = 'adminpassword'; // Use a strong password in reality
-
-    try {
-        console.log('Admin setup route initiated...');
-        
-        const userExists = await pool.query('SELECT * FROM "Users" WHERE email = $1', [adminEmail]);
-        if (userExists.rows.length > 0) {
-            return res.status(200).send("Admin user already exists. Setup was not needed.");
-        }
-
-        console.log('Creating new admin user...');
-        const salt = await bcrypt.genSalt(10);
-        const password_hash = await bcrypt.hash(adminPassword, salt);
-
-        const adminResult = await pool.query(
-            `INSERT INTO "Users" (name, email, password_hash, job_title) VALUES ('System Admin', $1, $2, 'Administrator') RETURNING user_id`,
-            [adminEmail, password_hash]
-        );
-        const adminId = adminResult.rows[0].user_id;
-        console.log(`Admin user created with ID: ${adminId}`);
-
-        await pool.query(
-            `INSERT INTO "User_Permissions" (user_id, permission_id) SELECT $1, permission_id FROM "Permissions"`,
-            [adminId]
-        );
-        console.log('All permissions have been granted to the admin user.');
-
-        res.status(201).send(`SUCCESS: Admin user '${adminEmail}' was created with ID ${adminId} and assigned all available permissions.`);
-
-    } catch (error) {
-        console.error('CRITICAL ERROR during admin setup:', error);
-        res.status(500).send("A server error occurred during the admin setup process. Check the backend logs for details.");
-    }
-});
-
+// === NEW SECRET ADMIN SETUP ROUTE (FOR ONE-TIME USE) ===
+// This route should be removed or heavily secured in production
+router.get('/setup-admin', setupInitialAdmin);
 
 // === PUBLIC ROUTES ===
 router.post('/login', loginUser);
-router.post('/request-password-reset', requestPasswordReset);
-router.post('/reset-password', resetPassword);
+router.post('/request-password-reset', requestPasswordReset); // <-- NEW ROUTE
+router.post('/reset-password', resetPassword);               // <-- NEW ROUTE
 
 // === ADMIN-ONLY ROUTES ===
 router.get('/', protect, authorize('MANAGE_USERS'), getAllUsers);
